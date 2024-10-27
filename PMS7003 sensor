@@ -1,0 +1,178 @@
+/*********************************************************************
+This code demonstrates the use of the Plantower PMS7003 laser particle counter
+on a rover platform. It includes data acquisition, error handling, and basic 
+integration with other rover functionalities.
+*********************************************************************/
+
+#include <Arduino.h>
+#include "Plantower_PMS7003.h"
+
+// Define your rover's settings and configurations
+#define SENSOR_BAUD_RATE 9600
+#define OUTPUT_INTERVAL 5000 // Output interval in milliseconds
+
+Plantower_PMS7003 pms7003;  // Create a PMS7003 object
+char output[256];
+unsigned long previousMillis = 0;
+
+void setup() {
+    Serial.begin(9600); // Start the serial communication for debugging
+    Serial1.begin(SENSOR_BAUD_RATE); // Start communication with PMS7003 sensor
+    pms7003.init(&Serial1); // Initialize the sensor
+}
+
+void loop() {
+    // Update sensor data
+    pms7003.updateFrame();
+    
+    // Check for new data from the sensor
+    if (pms7003.hasNewData()) {
+        logSensorData();
+    }
+
+    // Perform rover operations (navigation, decision-making, etc.)
+    // Example: roverControl(); 
+
+    // Handle any additional tasks, like battery management, if necessary
+    // Example: manageBattery();
+}
+
+void logSensorData() {
+    // Get current time for logging
+    unsigned long currentMillis = millis();
+    
+    // Log data at defined intervals
+    if (currentMillis - previousMillis >= OUTPUT_INTERVAL) {
+        previousMillis = currentMillis; // Update the previousMillis timestamp
+
+        // Prepare and print the sensor data
+        sprintf(output, "\nSensor Version: %d    Error Code: %d\n",
+                  pms7003.getHWVersion(),
+                  pms7003.getErrorCode());
+        Serial.print(output);
+        
+        sprintf(output, "PM1.0 (ug/m3): %u    PM2.5 (ug/m3): %u    PM10 (ug/m3): %u\n",
+                  pms7003.getPM_1_0(),
+                  pms7003.getPM_2_5(),
+                  pms7003.getPM_10_0());
+        Serial.print(output);
+
+        sprintf(output, "RAW Data: >0.3um: %u, >0.5um: %u, >1.0um: %u, >2.5um: %u, >5.0um: %u, >10.0um: %u\n",
+                  pms7003.getRawGreaterThan_0_3(),
+                  pms7003.getRawGreaterThan_0_5(),
+                  pms7003.getRawGreaterThan_1_0(),
+                  pms7003.getRawGreaterThan_2_5(),
+                  pms7003.getRawGreaterThan_5_0(),
+                  pms7003.getRawGreaterThan_10_0());
+        Serial.print(output);
+    }
+}
+
+/*********************************************************************
+An Arduino library for interfacing with the Plantower PMS7003 laser
+particle counter. This should also work the the PMS5003 sensor,
+as they share the same protocol.
+
+For more information about the PMS7003, see README.md.
+
+Written by Jason Striegel, modified for rover application.
+BSD license. See license.txt for details.
+*********************************************************************/
+
+#include "Plantower_PMS7003.h"
+
+Plantower_PMS7003::Plantower_PMS7003() {
+    dataReady = false;
+    initialized = false;
+    debug = false;
+}
+
+void Plantower_PMS7003::init(Stream *s) {
+    serial = s;
+    serial->begin(SENSOR_BAUD_RATE); // Set baud rate for sensor communication
+    dataReady = false;
+    nextByte = 0;
+    lastByte = 0;
+    bufferIndex = 0;
+    initialized = true;
+}
+
+void Plantower_PMS7003::updateFrame() {
+    if (!initialized) {
+        Serial.println("Error: Must call Plantower_PMS7003::init() first.");
+        return;
+    }
+    dataReady = false;
+    while (serial->available()) {
+        nextByte = serial->read();
+        
+        // Check for start bytes
+        if (nextByte == 0x4d && lastByte == 0x42) {
+            sensorData.bytes[0] = 0x42; // Store the start byte
+            bufferIndex = 1; // Reset the buffer index
+        }
+        sensorData.bytes[bufferIndex++] = nextByte; // Store the next byte
+        lastByte = nextByte; // Update last byte read
+
+        // Check if we've read enough bytes
+        if (bufferIndex == PMS7003_DATA_SIZE) {
+            if (sensorData.bytes[0] == 0x42 && sensorData.bytes[1] == 0x4d) {
+                if (isValidChecksum()) {
+                    convertSensorData(); // Convert the sensor data if valid
+                    dataReady = true; // Set data ready flag
+                } else {
+                    Serial.println("Invalid data checksum.");
+                }
+            } else {
+                Serial.println("Malformed first byte.");
+            }
+            bufferIndex = 0; // Reset buffer index for the next frame
+        }
+    }
+}
+
+bool Plantower_PMS7003::hasNewData() {
+    return dataReady;
+}
+
+// Get PM values
+uint16_t Plantower_PMS7003::getPM_1_0() { return sensorData.values.pm_1_0; }
+uint16_t Plantower_PMS7003::getPM_2_5() { return sensorData.values.pm_2_5; }
+uint16_t Plantower_PMS7003::getPM_10_0() { return sensorData.values.pm_10_0; }
+uint16_t Plantower_PMS7003::getPM_1_0_atmos() { return sensorData.values.pm_1_0_atmos; }
+uint16_t Plantower_PMS7003::getPM_2_5_atmos() { return sensorData.values.pm_2_5_atmos; }
+uint16_t Plantower_PMS7003::getPM_10_0_atmos() { return sensorData.values.pm_10_0_atmos; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_0_3() { return sensorData.values.raw_gt_0_3; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_0_5() { return sensorData.values.raw_gt_0_5; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_1_0() { return sensorData.values.raw_gt_1_0; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_2_5() { return sensorData.values.raw_gt_2_5; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_5_0() { return sensorData.values.raw_gt_5_0; }
+uint16_t Plantower_PMS7003::getRawGreaterThan_10_0() { return sensorData.values.raw_gt_10_0; }
+uint8_t Plantower_PMS7003::getHWVersion() { return sensorData.values.version_number; }
+uint8_t Plantower_PMS7003::getErrorCode() { return sensorData.values.error_code; }
+
+void Plantower_PMS7003::convertSensorData() {
+    int loc = 0;
+
+    loc += 1; // Skip start bytes
+    for (int i = 0; i < 13; i++) {
+        sensorData.words[loc++] = uint16FromBufferData(sensorData.bytes, loc * 2);
+    }
+    loc += 1; // Skip the version byte
+    sensorData.words[loc] = uint16FromBufferData(sensorData.bytes, loc * 2); // Read checksum
+}
+
+bool Plantower_PMS7003::isValidChecksum() {
+    uint16_t sum = 0;
+    for (int i = 0; i < (PMS7003_DATA_SIZE - 2); i++) {
+        sum += sensorData.bytes[i];
+    }
+    return sum == sensorData.values.checksum; // Return true if checksum matches
+}
+
+uint16_t Plantower_PMS7003::uint16FromBufferData(unsigned char *buff, int loc) {
+    if (loc > PMS7003_DATA_SIZE - 2 || loc < 2) {
+        return -1; // Return error for invalid location
+    }
+    return ((buff[loc] << 8) + buff[loc + 1]); // Combine bytes into a uint16_t
+}
