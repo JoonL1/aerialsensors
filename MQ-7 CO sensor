@@ -1,0 +1,26 @@
+#ifndef MQ7_h
+#define MQ7_h
+
+#include <Arduino.h>
+
+// Coefficients based on the MQ7 sensor characteristics for CO (Carbon Monoxide)
+#define COEFFICIENT_A 19.32
+#define COEFFICIENT_B -0.64
+
+// Load resistance on the sensor potentiometer
+#define R_LOAD 10.0
+
+class MQ7 {
+  private:
+    uint8_t analogPin; // Pin connected to the MQ7 sensor
+    float v_in; // Input voltage for the sensor
+    float voltageConversion(int value); // Converts analog reading to voltage
+    
+  public:
+    MQ7(uint8_t pin, float v_input); // Constructor to initialize the MQ7
+    float getPPM(); // Returns the PPM value of CO
+    float getSensorResistance(); // Returns the sensor resistance
+    float getRatio(); // Returns the Rs/R0 ratio
+};
+
+#endif
