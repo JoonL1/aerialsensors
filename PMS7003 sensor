@@ -69,14 +69,8 @@ void logSensorData() {
 }
 
 /*********************************************************************
-An Arduino library for interfacing with the Plantower PMS7003 laser
-particle counter. This should also work the the PMS5003 sensor,
-as they share the same protocol.
-
-For more information about the PMS7003, see README.md.
-
-Written by Jason Striegel, modified for rover application.
-BSD license. See license.txt for details.
+Arduino library for interfacing with the Plantower PMS7003 laser
+particle counter.
 *********************************************************************/
 
 #include "Plantower_PMS7003.h"
